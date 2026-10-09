@@ -200,9 +200,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       console.error('AGENT_MODE=subscription needs the Claude Code CLI signed in to your account.\nInstall it (npm i -g @anthropic-ai/claude-code), run `claude`, sign in, then start this again.');
       process.exit(1);
     }
-    if (!st.loggedIn) {
-      console.error(`Claude Code is installed (${st.bin}) but not signed in. Run \`claude\`, sign in with your Claude account, then start this again.`);
-      process.exit(1);
+    if (st.loggedIn !== true) {
+      // Not fatal: the CLI's status output differs between versions. The first agent run checks the real credential.
+      console.warn(`Could not confirm a Claude login via ${st.bin}. Output was:\n${String(st.raw).trim() || '(empty)'}\nIf agents fail, run \`claude\` once and sign in.`);
     }
     console.log(`Using your Claude login via ${st.bin} (${st.authMethod}). Usage counts against your plan limits.`);
   }

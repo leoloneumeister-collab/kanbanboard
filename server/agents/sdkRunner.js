@@ -98,14 +98,21 @@ export function findClaudeBinary(config) {
   }
 }
 
-/** `claude auth status` as JSON, or null if it can't be read. */
+/** `claude auth status`. Output format varies by CLI version, so keep the raw text for diagnostics. */
 export function loginStatus(config) {
   const bin = findClaudeBinary(config);
   if (!bin) return { found: false };
+  let raw = '';
   try {
-    return { found: true, bin, ...JSON.parse(execFileSync(bin, ['auth', 'status'], { encoding: 'utf8', timeout: 15000 })) };
+    raw = execFileSync(bin, ['auth', 'status'], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    raw = `${err.stdout || ''}${err.stderr || ''}` || String(err.message);
+  }
+  try {
+    return { found: true, bin, raw, ...JSON.parse(raw) };
   } catch {
-    return { found: true, bin, loggedIn: false };
+    const loggedIn = /logged in|signed in/i.test(raw) && !/not (logged|signed)/i.test(raw);
+    return { found: true, bin, raw, loggedIn: loggedIn ? true : undefined };
   }
 }
 
