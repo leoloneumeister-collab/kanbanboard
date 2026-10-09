@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Agent Board</title>
+  <meta name="description" content="Kanban board where Claude agents develop, test and review your tickets">
+  <meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Agent Board">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app" hidden>
+    <header class="top">
+      <h1>Agent Board</h1>
+      <div class="top-right">
+        <span id="spend" class="meta" aria-live="polite"></span>
+        <span id="conn" class="dot" role="status" aria-label="Connecting"></span>
+        <button id="info-btn" class="icon-btn" aria-label="Settings and status">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="7.8" r=".6" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </header>
+    <div id="banner" class="banner" hidden></div>
+    <nav id="tabs" class="tabs" role="tablist" aria-label="Columns"></nav>
+    <main id="board" class="board"></main>
+    <button id="fab" class="fab" aria-label="New ticket">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
+
+  <section id="login" class="login" hidden>
+    <form id="login-form" class="login-card" autocomplete="on">
+      <img src="/icon.svg" alt="" width="56" height="56">
+      <h1>Agent Board</h1>
+      <p class="muted">Sign in to your board.</p>
+      <input type="text" name="username" value="board" autocomplete="username" hidden>
+      <label for="pw" class="sr">Password</label>
+      <input id="pw" name="password" type="password" placeholder="Password" autocomplete="current-password" required>
+      <p id="login-err" class="err" role="alert"></p>
+      <button class="btn primary" type="submit">Sign in</button>
+    </form>
+  </section>
+
+  <dialog id="sheet" class="sheet" aria-labelledby="sheet-title"></dialog>
+  <div id="toasts" class="toasts" popover="manual" aria-live="polite"></div>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
