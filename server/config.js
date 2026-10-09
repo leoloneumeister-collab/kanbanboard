@@ -4,6 +4,10 @@ const bool = (v, d) => (v === undefined || v === '' ? d : /^(1|true|yes|on)$/i.t
 const num = (v, d) => (v === undefined || v === '' || Number.isNaN(Number(v)) ? d : Number(v));
 
 export function loadConfig(env = process.env) {
+  // mock | api (ANTHROPIC_API_KEY) | subscription (your own local `claude` login). "sdk" is the old name for api.
+  let mode = (env.AGENT_MODE || (env.ANTHROPIC_API_KEY ? 'api' : 'mock')).toLowerCase();
+  if (mode === 'sdk') mode = 'api';
+  const sub = mode === 'subscription';
   const dataDir = path.resolve(env.DATA_DIR || './data');
   return {
     port: num(env.PORT, 3000),
@@ -18,13 +22,14 @@ export function loadConfig(env = process.env) {
     trustProxy: env.TRUST_PROXY || '',
 
     // Agents.
-    agentMode: (env.AGENT_MODE || (env.ANTHROPIC_API_KEY ? 'sdk' : 'mock')).toLowerCase(),
+    agentMode: mode,
+    claudeBin: env.CLAUDE_BIN || '',
     model: env.AGENT_MODEL || '',
     maxTurns: num(env.AGENT_MAX_TURNS, 40),
     maxBudgetPerRunUsd: num(env.AGENT_MAX_BUDGET_USD, 2),
-    dailyBudgetUsd: num(env.DAILY_BUDGET_USD, 20),
+    dailyBudgetUsd: num(env.DAILY_BUDGET_USD, sub ? 0 : 20),
     agentEnvPassthrough: (env.AGENT_ENV_PASSTHROUGH || '').split(',').map((x) => x.trim()).filter(Boolean),
-    maxConcurrent: Math.max(1, num(env.MAX_CONCURRENT_AGENTS, 2)),
+    maxConcurrent: Math.max(1, num(env.MAX_CONCURRENT_AGENTS, sub ? 1 : 2)),
     maxLoops: num(env.MAX_LOOPS, 3),
     autoDone: bool(env.AUTO_DONE, true),
     mockDelayMs: num(env.MOCK_DELAY_MS, 1200),

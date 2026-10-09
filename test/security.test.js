@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { boot, waitFor } from './helpers.js';
 import { parseVerdict } from '../server/agents/prompts.js';
-import { agentEnv, mapSdkError } from '../server/agents/sdkRunner.js';
+import { agentEnv, mapSdkError, checkAuthSource } from '../server/agents/sdkRunner.js';
 import { loadConfig } from '../server/config.js';
 
 test('everything under /api needs a session; login rejects bad passwords and rate limits guessing', async () => {
@@ -159,4 +159,24 @@ test('SDK limit errors (exact strings seen from the real SDK) become readable me
   assert.equal(budget.costUsd, 2, 'the daily ledger must not under-count a run that exhausted its budget');
   assert.equal(mapSdkError('Claude Code returned an error result: Invalid API key', cfg).error, 'Invalid API key');
   assert.equal(mapSdkError('', cfg).error, 'Agent failed');
+});
+
+test('subscription mode: defaults are cautious, API keys are stripped, wrong credential source is refused', () => {
+  const sub = loadConfig({ AGENT_MODE: 'subscription', ANTHROPIC_API_KEY: 'sk-ant-x' });
+  assert.equal(sub.agentMode, 'subscription');
+  assert.equal(sub.maxConcurrent, 1, 'Pro limits burn fast, so one agent at a time');
+  assert.equal(sub.dailyBudgetUsd, 0, 'dollar estimates are not real spend on a plan');
+  assert.equal(loadConfig({ AGENT_MODE: 'sdk' }).agentMode, 'api', 'old name still works');
+  assert.equal(loadConfig({}).agentMode, 'mock');
+  assert.equal(loadConfig({ ANTHROPIC_API_KEY: 'k' }).agentMode, 'api');
+
+  const env = agentEnv(sub, { PATH: '/bin', HOME: '/h', ANTHROPIC_API_KEY: 'sk', ANTHROPIC_AUTH_TOKEN: 't' });
+  assert.equal(env.ANTHROPIC_API_KEY, undefined);
+  assert.equal(env.ANTHROPIC_AUTH_TOKEN, undefined);
+  assert.equal(env.HOME, '/h', 'HOME must pass so the local login is found');
+
+  assert.match(checkAuthSource('subscription', 'ANTHROPIC_API_KEY'), /nothing gets billed/);
+  assert.equal(checkAuthSource('subscription', 'none'), null);
+  assert.match(checkAuthSource('api', 'none'), /ANTHROPIC_API_KEY/);
+  assert.equal(checkAuthSource('api', 'ANTHROPIC_API_KEY'), null);
 });

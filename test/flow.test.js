@@ -384,3 +384,29 @@ test('a half-created worktree directory from a crash is cleaned up instead of fa
     await b.close();
   }
 });
+
+test('usage limit pauses the whole queue and resumes by itself without counting as a failure', async () => {
+  let hits = 0;
+  const limited = {
+    name: 'mock',
+    async run({ stage, cwd, ticket }) {
+      if (stage === 'developer' && hits++ === 0) return { text: '', costUsd: 0, rateLimited: { resetsAt: Date.now() + 400 } };
+      if (stage === 'developer') fs.writeFileSync(path.join(cwd, 'x.txt'), ticket.id);
+      return { text: stage === 'developer' ? 'VERDICT: DONE\nSUMMARY: ok' : stage === 'tester' ? 'VERDICT: PASS\nSUMMARY: ok' : 'VERDICT: APPROVE\nSUMMARY: ok', costUsd: 0 };
+    },
+  };
+  const b = await boot({}, { runner: limited });
+  try {
+    const t = await b.create('Limited', '', { start: true });
+    const x = await waitFor(async () => {
+      const y = await b.ticket(t.id);
+      return y.runs[0]?.outcome === 'rate-limited' && y.status === 'queued' ? y : null;
+    }, { label: 'parked on limit' });
+    assert.equal(x.loops, 0);
+    assert.match(x.statusNote, /usage limit/);
+    assert.ok((await b.api.get('/api/board')).data.status.rateLimitedUntil > Date.now());
+    await waitFor(async () => (await b.ticket(t.id)).column === 'done', { label: 'resumed and done', timeout: 10000 });
+  } finally {
+    await b.close();
+  }
+});

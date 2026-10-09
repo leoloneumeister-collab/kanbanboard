@@ -241,7 +241,10 @@ function render() {
   conn.setAttribute('aria-label', S.conn === 'ok' ? 'Live' : 'Reconnecting');
   const banner = $('#banner');
   banner.hidden = !st.paused;
-  if (st.paused) banner.textContent = `Agents paused: today's $${st.dailyBudgetUsd} budget is used up. Raise DAILY_BUDGET_USD or wait until tomorrow.`;
+  const limited = st.rateLimitedUntil > Date.now();
+  banner.hidden = !st.paused && !limited;
+  if (limited) banner.textContent = `Claude usage limit reached. Agents resume automatically around ${new Date(st.rateLimitedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}.`;
+  else if (st.paused) banner.textContent = `Agents paused: today's $${st.dailyBudgetUsd} budget is used up. Raise DAILY_BUDGET_USD or wait until tomorrow.`;
 
   // cards
   const byCol = new Map(S.columns.map((c) => [c.id, []]));
@@ -494,10 +497,10 @@ function openNewTicket() {
 function openInfo() {
   const st = S.status;
   const rows = [
-    ['Agents', st.mode === 'mock' ? 'Demo mode (simulated, free)' : 'Claude (live)'],
+    ['Agents', { mock: 'Demo mode (simulated, free)', api: 'Claude via API key', subscription: 'Claude via your subscription' }[st.mode] || st.mode],
     ['Working now', `${st.running || 0} of ${st.maxConcurrent || 0}`],
     ['Queued', String(st.queued || 0)],
-    ['Spent today', st.dailyBudgetUsd > 0 ? `${money(st.spentToday || 0)} of $${st.dailyBudgetUsd}` : money(st.spentToday || 0)],
+    [st.mode === 'subscription' ? 'Est. usage today' : 'Spent today', st.dailyBudgetUsd > 0 ? `${money(st.spentToday || 0)} of $${st.dailyBudgetUsd}` : money(st.spentToday || 0)],
     ['Base branch', S.workspace.base || ''],
     ['Pushes branches', S.workspace.pushes ? 'yes' : 'no (local only)'],
   ];

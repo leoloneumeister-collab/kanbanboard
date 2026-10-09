@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -7,7 +8,7 @@ import { Workspace } from './workspace.js';
 import { Orchestrator, httpError } from './orchestrator.js';
 import { createAuth } from './auth.js';
 import { createMockRunner } from './agents/mockRunner.js';
-import { createSdkRunner } from './agents/sdkRunner.js';
+import { createSdkRunner, loginStatus } from './agents/sdkRunner.js';
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -33,7 +34,7 @@ export async function createApp(config, { runner } = {}) {
     store,
     workspace,
     config,
-    runner: runner ?? (config.agentMode === 'sdk' ? createSdkRunner(config) : createMockRunner(config)),
+    runner: runner ?? (config.agentMode === 'mock' ? createMockRunner(config) : createSdkRunner(config)),
   });
   const auth = createAuth(config);
   const app = express();
@@ -190,12 +191,27 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     );
     process.exit(1);
   }
-  if (config.agentMode === 'sdk' && !process.env.ANTHROPIC_API_KEY) {
-    console.warn('AGENT_MODE=sdk but ANTHROPIC_API_KEY is not set. Agent runs will fail until it is.');
+  if (config.agentMode === 'api' && !process.env.ANTHROPIC_API_KEY) {
+    console.warn('AGENT_MODE=api but ANTHROPIC_API_KEY is not set. Agent runs will fail until it is.');
+  }
+  if (config.agentMode === 'subscription') {
+    const st = loginStatus(config);
+    if (!st.found) {
+      console.error('AGENT_MODE=subscription needs the Claude Code CLI signed in to your account.\nInstall it (npm i -g @anthropic-ai/claude-code), run `claude`, sign in, then start this again.');
+      process.exit(1);
+    }
+    if (!st.loggedIn) {
+      console.error(`Claude Code is installed (${st.bin}) but not signed in. Run \`claude\`, sign in with your Claude account, then start this again.`);
+      process.exit(1);
+    }
+    console.log(`Using your Claude login via ${st.bin} (${st.authMethod}). Usage counts against your plan limits.`);
   }
   const { app, shutdown, workspace } = await createApp(config);
   const server = app.listen(config.port, config.host, () => {
     console.log(`Kanban board on http://localhost:${config.port}  |  agents: ${config.agentMode}  |  repo: ${workspace.repoDir} (${workspace.baseBranch})`);
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const a of list ?? []) if (a.family === 'IPv4' && !a.internal) console.log(`On your phone (same Wi-Fi): http://${a.address}:${config.port}`);
+    }
   });
   const stop = async () => {
     server.close();

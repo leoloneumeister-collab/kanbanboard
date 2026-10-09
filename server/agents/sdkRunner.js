@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 
 const WORK_TOOLS = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash'];
@@ -38,6 +39,11 @@ export function agentEnv(config, base = process.env) {
   for (const [k, v] of Object.entries(base)) {
     if (v !== undefined && (extra.has(k) || ENV_ALLOW.some((re) => re.test(k)))) env[k] = v;
   }
+  // Subscription mode must never silently fall back to a metered API key.
+  if (config.agentMode === 'subscription') {
+    delete env.ANTHROPIC_API_KEY;
+    delete env.ANTHROPIC_AUTH_TOKEN;
+  }
   env.GIT_AUTHOR_NAME = env.GIT_COMMITTER_NAME = config.gitName;
   env.GIT_AUTHOR_EMAIL = env.GIT_COMMITTER_EMAIL = config.gitEmail;
   env.GIT_TERMINAL_PROMPT = '0';
@@ -71,7 +77,47 @@ export function mapSdkError(message, config) {
   return { error: msg || 'Agent failed', costUsd: 0 };
 }
 
+/** Guard against billing surprises: check which credential the Claude process actually picked. */
+export function checkAuthSource(mode, apiKeySource) {
+  if (mode === 'subscription' && apiKeySource !== 'none') {
+    return `Subscription mode expected your Claude login, but Claude is using an API key (${apiKeySource}). Run was stopped so nothing gets billed.`;
+  }
+  if (mode === 'api' && apiKeySource === 'none') {
+    return 'API mode expected ANTHROPIC_API_KEY, but Claude is using a login instead. Set the key, or use AGENT_MODE=subscription.';
+  }
+  return null;
+}
+
+/** Find the user's own installed `claude` so the run uses the binary they signed in with. */
+export function findClaudeBinary(config) {
+  if (config.claudeBin) return config.claudeBin;
+  try {
+    return execFileSync(process.platform === 'win32' ? 'where' : 'which', ['claude'], { encoding: 'utf8' }).split('\n')[0].trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `claude auth status` as JSON, or null if it can't be read. */
+export function loginStatus(config) {
+  const bin = findClaudeBinary(config);
+  if (!bin) return { found: false };
+  try {
+    return { found: true, bin, ...JSON.parse(execFileSync(bin, ['auth', 'status'], { encoding: 'utf8', timeout: 15000 })) };
+  } catch {
+    return { found: true, bin, loggedIn: false };
+  }
+}
+
+class RateLimited extends Error {
+  constructor(resetsAtMs) {
+    super('Claude usage limit reached');
+    this.resetsAtMs = resetsAtMs;
+  }
+}
+
 export function createSdkRunner(config) {
+  const claudeBin = config.agentMode === 'subscription' ? findClaudeBinary(config) : undefined;
   return {
     name: 'sdk',
     async run({ stage, cwd, prompt, system, signal, onLog }) {
@@ -92,6 +138,7 @@ export function createSdkRunner(config) {
         maxTurns: config.maxTurns,
         maxBudgetUsd: config.maxBudgetPerRunUsd,
         persistSession: false,
+        ...(claudeBin ? { pathToClaudeCodeExecutable: claudeBin } : {}),
         ...(config.model ? { model: config.model } : {}),
       };
 
@@ -100,7 +147,17 @@ export function createSdkRunner(config) {
       let error = null;
       try {
         for await (const msg of query({ prompt, options })) {
-          if (msg.type === 'assistant') {
+          if (msg.type === 'system' && msg.subtype === 'init') {
+            const bad = checkAuthSource(config.agentMode, msg.apiKeySource);
+            if (bad) {
+              abortController.abort();
+              return { text: '', costUsd, error: bad };
+            }
+          } else if (msg.type === 'rate_limit_event' && msg.rate_limit_info?.status === 'rejected') {
+            const r = msg.rate_limit_info.resetsAt;
+            throw new RateLimited(r ? (r < 1e12 ? r * 1000 : r) : Date.now() + 15 * 60 * 1000);
+          } else if (msg.type === 'assistant') {
+            if (msg.error === 'rate_limit') throw new RateLimited(Date.now() + 15 * 60 * 1000);
             if (msg.error) error = `Claude API error: ${msg.error}`;
             for (const block of msg.message?.content ?? []) {
               if (block.type === 'text' && block.text?.trim()) onLog('say', block.text.trim());
@@ -113,6 +170,7 @@ export function createSdkRunner(config) {
           }
         }
       } catch (err) {
+        if (err instanceof RateLimited) return { text: '', costUsd, rateLimited: { resetsAt: err.resetsAtMs } };
         if (abortController.signal.aborted) throw err; // a stop or move, not a failure
         const mapped = mapSdkError(err.message, config);
         error = mapped.error;

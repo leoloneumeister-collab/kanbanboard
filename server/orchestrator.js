@@ -27,6 +27,7 @@ export class Orchestrator extends EventEmitter {
     this.queue = [];
     this.timer = null;
     this.lastPaused = false;
+    this.pausedUntil = 0; // set when Claude says the usage limit is reached
   }
 
   start() {
@@ -50,6 +51,7 @@ export class Orchestrator extends EventEmitter {
   async stop() {
     this.stopped = true;
     clearInterval(this.timer);
+    clearTimeout(this.wake);
     // Detach runs from their tickets first so the aborts below look stale and are not recorded as
     // failures. The tickets stay "running" on disk and start() re-queues them after a restart.
     for (const [id, { abort }] of this.active) {
@@ -70,11 +72,12 @@ export class Orchestrator extends EventEmitter {
 
   status() {
     return {
-      mode: this.runner.name,
+      mode: this.config.agentMode,
       running: this.active.size,
       queued: this.queue.length,
       maxConcurrent: this.config.maxConcurrent,
       paused: this.overBudget,
+      rateLimitedUntil: this.pausedUntil > Date.now() ? this.pausedUntil : 0,
       spentToday: Number(this.store.spentToday().toFixed(4)),
       dailyBudgetUsd: this.config.dailyBudgetUsd,
     };
@@ -187,7 +190,8 @@ export class Orchestrator extends EventEmitter {
 
   pump() {
     if (this.stopped) return;
-    const paused = this.overBudget;
+    const limited = this.pausedUntil > Date.now();
+    const paused = this.overBudget || limited;
     while (!paused && this.active.size < this.config.maxConcurrent && this.queue.length) {
       const t = this.store.get(this.queue.shift());
       if (!t || t.status !== 'queued' || !agentFor(t.column)) continue;
@@ -198,8 +202,9 @@ export class Orchestrator extends EventEmitter {
     if (paused) {
       for (const id of this.queue) {
         const t = this.store.get(id);
-        if (t && t.statusNote !== 'Waiting: daily budget reached') {
-          t.statusNote = 'Waiting: daily budget reached';
+        const note = limited ? 'Waiting: Claude usage limit, resumes automatically' : 'Waiting: daily budget reached';
+        if (t && t.statusNote !== note) {
+          t.statusNote = note;
           this.store.touch(t);
         }
       }
@@ -282,6 +287,17 @@ export class Orchestrator extends EventEmitter {
 
   async #finish(t, run, stage, result) {
     const cost = result.costUsd || 0;
+    if (result.rateLimited) {
+      // Not a failure: park the ticket, pause the whole queue, and carry on when the limit resets.
+      this.#closeRun(t, run, 'rate-limited', 'Claude usage limit reached', cost);
+      this.pausedUntil = Math.max(this.pausedUntil, result.rateLimited.resetsAt + 5000);
+      this.store.addLog(t, 'system', `Claude usage limit reached. Resuming around ${new Date(this.pausedUntil).toLocaleTimeString()}.`);
+      this.#enqueue(t);
+      clearTimeout(this.wake);
+      this.wake = setTimeout(() => this.#after(), Math.max(0, this.pausedUntil - Date.now()) + 50);
+      this.wake.unref?.();
+      return this.#emitStatus();
+    }
     if (result.error) return this.#fail(t, run, result.error, cost);
 
     const { verdict, summary } = parseVerdict(stage, result.text);
