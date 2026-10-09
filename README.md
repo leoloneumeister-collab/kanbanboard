@@ -67,21 +67,22 @@ npm start
 - Already have the repo on the machine? Use `WORKSPACE_DIR=/path/to/repo` instead.
 - Without either, agents work in an empty scratch repo.
 
-## Open it on your phone
+## Open it on your phone (Tailscale)
 
-Pick one.
+Tailscale gives your phone a private, HTTPS link to the machine running the board. Nothing is exposed to the public internet, and you need this for the home-screen install.
 
-1. **Home machine or VPS + Tailscale (my recommendation).** Install Tailscale on the server and your phone, then `tailscale serve --bg 3000`. Nothing is exposed to the public internet. Open the `https://<machine>.<tailnet>.ts.net` URL.
-2. **Hosted container (Fly.io, Railway, Render).** Deploy the `Dockerfile`, mount a volume at `/data`, set the env vars from `.env.example`, and set `TRUST_PROXY=1`. This one is public, so use a long `APP_PASSWORD`.
-3. **Quick tunnel (Cloudflare Tunnel, ngrok).** Fine for a test. Same warning as above.
+1. Make a free account at tailscale.com and install Tailscale on the computer running the board and on your phone. Sign in to the same account on both.
+2. In the Tailscale admin console (DNS page), turn on MagicDNS and HTTPS certificates. One time only.
+3. Start the board: `APP_PASSWORD=... AGENT_MODE=subscription npm start`
+4. In another terminal on that computer: `tailscale serve --bg 3000`
+5. It prints a link like `https://your-machine.your-tailnet.ts.net`. Open it on your phone (Tailscale app must be on).
+6. Share, then Add to Home Screen.
 
-Then on the phone: open the URL, Share, Add to Home Screen. It installs like an app.
-
-## Vercel
-
-This backend can't run on Vercel. Vercel Functions are capped at [5 minutes on Hobby and 13 minutes on Pro](https://vercel.com/docs/functions/limitations) (streams included), and agent runs plus the live event stream outlast that. They also have no persistent disk, and this app needs one for git worktrees and state. Moving it there means a rewrite onto a sandbox/queue product, an API key (subscription login must not live on a host), and a database.
-
-If you still want a Vercel URL, host only the static `public/` folder there and proxy `/api` to the machine running the board through a tunnel. It works, but it adds a hop and still exposes your machine, so Tailscale alone is simpler.
+Notes:
+- Use `tailscale serve`, not `tailscale funnel`. Funnel puts the board on the public internet.
+- Put `TRUST_PROXY=1` in your env so secure cookies work behind the proxy.
+- The computer has to stay awake and online for agents to keep working. Stop sharing with `tailscale serve reset`.
+- For an always-on setup, run the same steps on a small VPS and use `AGENT_MODE=api`. Keep your subscription login on your own machine.
 
 ## Limits that stop a bad day
 
