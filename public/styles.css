@@ -340,3 +340,12 @@ details.fb pre { margin: 0; padding: 0 14px 14px; white-space: pre-wrap; overflo
   .sheet-grab { display: none; }
   .sheet[open] { animation: none; }
 }
+
+/* ---- changes ---- */
+.files { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.file { display: flex; gap: 10px; align-items: baseline; padding: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
+.file .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.plus { color: var(--ok); } .minus { color: var(--bad); }
+.patch { max-height: 320px; overflow: auto; padding: 0 14px 14px; font-size: 12px; line-height: 1.5; }
+.patch div { white-space: pre-wrap; overflow-wrap: anywhere; }
+.patch .add { color: var(--ok); } .patch .del { color: var(--bad); } .patch .hunk { color: var(--run); }

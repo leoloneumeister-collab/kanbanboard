@@ -319,6 +319,7 @@ function buildSheet(t) {
   refs.feedback = h('details', { class: 'fb' });
   refs.moves = h('div', { class: 'moves', role: 'group', 'aria-label': 'Move to column' });
   refs.log = h('div', { class: 'log', tabIndex: 0, 'aria-label': 'Agent activity', role: 'log' });
+  refs.changes = h('div', { class: 'changes' }, h('p', { class: 'muted', text: 'Loading…' }));
   refs.runs = h('div', { class: 'runs' });
   refs.comments = h('div', { class: 'comments' });
   refs.commentBox = h('textarea', { rows: 2, placeholder: 'Add a note or answer a question. Agents read these.', maxLength: 4000, 'aria-label': 'Comment' });
@@ -341,6 +342,7 @@ function buildSheet(t) {
       h('div', { class: 'field' }, h('span', { class: 'label', text: 'Move to' }), refs.moves),
       refs.field('Description', 'f-desc', refs.desc),
       refs.save,
+      h('div', { class: 'field' }, h('span', { class: 'label', text: 'Changes' }), refs.changes),
       h('div', { class: 'field' }, h('span', { class: 'label', text: 'Runs' }), refs.runs),
       h('div', { class: 'field' }, h('span', { class: 'label', text: 'Notes' }), refs.comments, refs.commentBox, refs.commentBtns),
       h('div', { class: 'field' }, h('span', { class: 'label', text: 'Details' }), refs.meta),
@@ -369,6 +371,24 @@ function appendLog(entry, initial = false) {
   refs.log.append(h('div', { class: entry.kind }, h('time', { text: clock(entry.t) }), prefix + entry.text));
   while (refs.log.childElementCount > 400) refs.log.firstChild.remove();
   if (stick) refs.log.scrollTop = refs.log.scrollHeight;
+}
+
+async function loadChanges(id) {
+  const refs = S.sheet;
+  if (!refs) return;
+  const d = await api('GET', `/api/tickets/${id}/diff`).catch(() => null);
+  if (!d || S.openId !== id) return;
+  if (!d.files.length) return refs.changes.replaceChildren(h('p', { class: 'muted', text: 'No changes on the branch yet.' }));
+  const add = d.files.reduce((n, f) => n + f.added, 0);
+  const del = d.files.reduce((n, f) => n + f.removed, 0);
+  const lines = d.patch.split('\n').slice(0, 600);
+  refs.changes.replaceChildren(
+    h('p', { class: 'muted', text: `${d.files.length} file${d.files.length === 1 ? '' : 's'}, +${add} −${del}` }),
+    h('div', { class: 'files' }, d.files.map((f) => h('div', { class: 'file' }, h('span', { class: 'mono grow', text: f.file }), h('span', { class: 'plus', text: f.binary ? 'binary' : `+${f.added}` }), f.binary ? null : h('span', { class: 'minus', text: `−${f.removed}` })))),
+    h('details', { class: 'fb' }, h('summary', { text: 'Show full diff' }),
+      h('div', { class: 'patch mono' }, lines.map((l) => h('div', { class: l.startsWith('+') && !l.startsWith('+++') ? 'add' : l.startsWith('-') && !l.startsWith('---') ? 'del' : l.startsWith('@@') ? 'hunk' : '', text: l || ' ' })),
+        d.truncated || d.patch.split('\n').length > 600 ? h('div', { class: 'hunk', text: '… diff cut short, open the branch for the rest' }) : null)),
+  );
 }
 
 function refreshSheet() {
@@ -410,6 +430,11 @@ function refreshSheet() {
     })),
   );
 
+  const sig = `${t.runs.length}:${t.runs.at(-1)?.outcome}`;
+  if (refs.changesSig !== sig) {
+    refs.changesSig = sig;
+    loadChanges(t.id);
+  }
   refs.runs.replaceChildren(
     ...(t.runs.length === 0 ? [h('p', { class: 'muted', text: 'No agent has worked on this yet.' })] : [...t.runs].reverse().map((r) =>
       h('div', { class: 'run' },

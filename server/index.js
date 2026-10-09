@@ -114,6 +114,14 @@ export async function createApp(config, { runner } = {}) {
     res.json(publicTicket(t, { full: true }));
   });
 
+  api.get('/tickets/:id/diff', async (req, res, next) => {
+    try {
+    const t = store.get(req.params.id);
+    if (!t) throw httpError(404, 'Ticket not found');
+    res.json(await workspace.diff(t));
+    } catch (err) { next(err); }
+  });
+
   api.patch('/tickets/:id', (req, res) => {
     const t = store.get(req.params.id);
     if (!t) throw httpError(404, 'Ticket not found');

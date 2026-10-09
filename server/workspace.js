@@ -146,6 +146,22 @@ export class Workspace {
     return Number(n) || 0;
   }
 
+  /** What this ticket's branch changes relative to where it started. Read-only, size capped. */
+  async diff(ticket, { maxBytes = 200_000 } = {}) {
+    const dir = this.dirFor(ticket);
+    if (!ticket.baseSha || !fs.existsSync(path.join(dir, '.git'))) return { files: [], patch: '', truncated: false };
+    const range = `${ticket.baseSha}...HEAD`;
+    const stat = await this.git(['diff', '--numstat', range], { cwd: dir });
+    const files = stat.split('\n').filter(Boolean).map((l) => {
+      const [add, del, ...name] = l.split('\t');
+      return { file: name.join('\t'), added: add === '-' ? 0 : Number(add), removed: del === '-' ? 0 : Number(del), binary: add === '-' };
+    });
+    let patch = await this.git(['diff', '--no-color', range], { cwd: dir });
+    const truncated = patch.length > maxBytes;
+    if (truncated) patch = patch.slice(0, maxBytes);
+    return { files, patch, truncated };
+  }
+
   async push(ticket) {
     if (!this.config.pushBranches || !this.remote || !ticket.branch) return false;
     await this.git(['push', '-u', 'origin', ticket.branch], { cwd: this.dirFor(ticket), auth: true });

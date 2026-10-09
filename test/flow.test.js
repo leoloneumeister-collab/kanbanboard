@@ -31,6 +31,12 @@ test('happy path: In Work -> Testing -> Review -> Done, on its own branch with r
     assert.equal(git(b.workspace.repoDir, 'rev-list', '--count', 'main'), '1', 'main must be untouched');
     assert.ok(fs.existsSync(path.join(b.dataDir, 'worktrees', t.id, 't-1.md')));
 
+    const diff = (await b.api.get(`/api/tickets/${t.id}/diff`)).data;
+    assert.deepEqual(diff.files.map((f) => f.file), ['t-1.md']);
+    assert.ok(diff.files[0].added > 0);
+    assert.match(diff.patch, /\+# Add greeting/);
+    assert.equal((await b.api.get('/api/tickets/T-999/diff')).status, 404);
+
     const verdicts = done.log.filter((l) => l.kind === 'verdict').map((l) => l.text.split(':')[0]);
     assert.deepEqual(verdicts, ['DONE', 'PASS', 'APPROVE']);
   } finally {
