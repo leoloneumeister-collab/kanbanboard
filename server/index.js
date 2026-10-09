@@ -52,6 +52,17 @@ export async function createApp(config, { runner } = {}) {
     next();
   });
 
+  // Without a password, only requests addressed to this machine are served. That blocks DNS rebinding,
+  // where a website you visit points its own hostname at 127.0.0.1 to reach the board.
+  if (!auth.enabled) {
+    const ok = new Set(['localhost', '127.0.0.1', '[::1]', ...config.allowedHosts]);
+    app.use((req, res, next) => {
+      const host = String(req.headers.host || '').toLowerCase().replace(/:\d+$/, '');
+      if (ok.has(host)) return next();
+      res.status(403).type('text').send(`Blocked host "${host}". For access by another name, set ALLOWED_HOSTS=${host} (and keep a password on anything reachable by others).`);
+    });
+  }
+
   app.get('/healthz', (req, res) => res.json({ ok: true }));
   app.use(express.json({ limit: '100kb' }));
 
@@ -205,6 +216,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       console.warn(`Could not confirm a Claude login via ${st.bin}. Output was:\n${String(st.raw).trim() || '(empty)'}\nIf agents fail, run \`claude\` once and sign in.`);
     }
     console.log(`Using your Claude login via ${st.bin} (${st.authMethod}). Usage counts against your plan limits.`);
+  }
+  if (config.allowNoAuth && !['127.0.0.1', 'localhost', '::1'].includes(config.host) && !config.allowedHosts.length) {
+    console.error('ALLOW_NO_AUTH only works on localhost. Remove HOST, or set a password.');
+    process.exit(1);
   }
   const { app, shutdown, workspace } = await createApp(config);
   const server = app.listen(config.port, config.host, () => {

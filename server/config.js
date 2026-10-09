@@ -11,7 +11,8 @@ export function loadConfig(env = process.env) {
   const dataDir = path.resolve(env.DATA_DIR || './data');
   return {
     port: num(env.PORT, 3000),
-    host: env.HOST || '0.0.0.0',
+    host: env.HOST || (/^(1|true|yes|on)$/i.test(env.ALLOW_NO_AUTH || '') ? '127.0.0.1' : '0.0.0.0'),
+    allowedHosts: (env.ALLOWED_HOSTS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean),
     dataDir,
 
     // Auth. One shared password; the board is remote code execution on your box, so it is mandatory.

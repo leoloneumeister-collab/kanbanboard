@@ -45,6 +45,10 @@ Practical limits on Pro:
 - When Claude says the limit is reached, the board pauses the queue and resumes by itself at the reset time. Tickets are not failed.
 - Dollar figures in the UI are estimates of API-equivalent cost, not charges. `DAILY_BUDGET_USD` defaults to off here, per-run limits still apply.
 
+### No password on your own computer
+
+`npm run local` starts it with no password in subscription mode. It only listens on localhost and rejects any other hostname, so only you, on this computer, can open http://localhost:3000. For your phone, use a password (or Tailscale below with `ALLOWED_HOSTS=your-machine.your-tailnet.ts.net`).
+
 ### Using an API key
 
 Set `ANTHROPIC_API_KEY`. Billed per token: cents for a small ticket, dollars for a big one. This is the mode for any hosted setup.

@@ -180,3 +180,19 @@ test('subscription mode: defaults are cautious, API keys are stripped, wrong cre
   assert.match(checkAuthSource('api', 'none'), /ANTHROPIC_API_KEY/);
   assert.equal(checkAuthSource('api', 'ANTHROPIC_API_KEY'), null);
 });
+
+test('no-password mode only answers requests addressed to this machine (DNS rebinding guard)', async () => {
+  const b = await boot({ ALLOW_NO_AUTH: 'true', APP_PASSWORD: '' });
+  try {
+    assert.equal((await fetch(`${b.base}/api/board`)).status, 200, 'open on localhost');
+    const evil = await new Promise((resolve) => {
+      import('node:http').then(({ request }) => {
+        const u = new URL(b.base);
+        request({ host: u.hostname, port: u.port, path: '/api/board', headers: { host: 'evil.example.com' } }, (r) => resolve(r.statusCode)).end();
+      });
+    });
+    assert.equal(evil, 403);
+  } finally {
+    await b.close();
+  }
+});
